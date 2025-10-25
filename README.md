@@ -1,36 +1,56 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Lab de Identidade Soberana (DID/SSI) - PoC PGCOMP/UFBA 🇧🇷
 
-## Getting Started
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Status: PoC](https://img.shields.io/badge/status-Prova%20de%20Conceito-brightgreen)](https://github.com/florenciotarson/did-lab-ufba)
+[![Blockchain: Sepolia](https://img.shields.io/badge/Blockchain-Sepolia%20Testnet-purple)](https://sepolia.etherscan.io/)
 
-First, run the development server:
+**Prova de Conceito de Identidade Descentralizada (DID/SSI) desenvolvida para o processo seletivo do Mestrado do PGCOMP/UFBA (Edital 10/2025).**
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+**🚀 Lab Ao Vivo:** [**https://did.oxecollective.com**](https://did.oxecollective.com)
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Motivação
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Explorar uma alternativa ao modelo centralizado de identidade digital (OAuth, SAML, etc.), focando em:
+* **Soberania do Usuário:** Controle total sobre os próprios dados.
+* **Privacidade (Zero-Knowledge):** Provar fatos sem revelar dados sensíveis.
+* **Segurança:** Eliminar pontos únicos de falha.
+* **Inclusão Digital:** Padrões abertos e gratuitos.
+* **Alinhamento:** LGPD e iniciativas de soberania digital (RNP).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Conceito Central: "Cartório" vs. "Cofre"
 
-## Learn More
+* **Blockchain (Sepolia):** Atua como "Cartório" público, registrando apenas **hashes** (provas) via Smart Contract (`IdentidadeDID.sol`).
+* **Banco de Dados (Neon/Postgres):** Atua como "Cofre" privado, armazenando **blobs criptografados** (dados) + metadados. *A plataforma não lê os dados do usuário.*
 
-To learn more about Next.js, take a look at the following resources:
+## Funcionalidades
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+* Emissão de Credenciais (Hash on-chain, Blob off-chain)
+* Verificação Zero-Knowledge (Consulta `true`/`false` on-chain)
+* Revogação pelo Usuário (On-chain)
+* Soberania via Backup/Exportação (JSON com blobs criptografados - *a implementar*)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Stack Tecnológica
 
-## Deploy on Vercel
+* **Blockchain:** Solidity, Sepolia, MetaMask, Ethers.js
+* **Backend:** Vercel Serverless Functions (Node.js)
+* **Frontend:** Vercel (Next.js/React/Tailwind)
+* **Banco de Dados:** Neon Postgres + Prisma
+* **Infra:** Alchemy (RPC), Cloudflare (DNS)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Como Rodar Localmente
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1.  **Clone:** `git clone https://github.com/florenciotarson/did-lab-ufba.git && cd did-lab-ufba`
+2.  **Instale:** `npm install && npm install ethers`
+3.  **Contrato:** Implante `/contracts/IdentidadeDID.sol` na Sepolia via [Remix IDE](https://remix.ethereum.org/).
+4.  **Configure `.env.development.local`:** Copie `.env.example` (se existir) ou crie o arquivo. Adicione as chaves:
+    * `POSTGRES_...` (Use `vercel env pull` após conectar Vercel + Neon)
+    * `NEXT_PUBLIC_SEPOLIA_RPC_URL` (Da Alchemy)
+    * `EMISSOR_PRIVATE_KEY` (De uma carteira Sepolia com ETH de teste)
+    * `NEXT_PUBLIC_CONTRATO_ENDERECO` (Do deploy do contrato)
+5.  **Banco (Primeira vez):** `npx dotenv -e .env.development.local -- npx prisma migrate dev --name init`
+6.  **Rode:** `npm run dev` (Acesse `http://localhost:3000`)
+
+## Autor
+
+* **Tarson Marcelo Florêncio Santos**
+* [LinkedIn](https://www.linkedin.com/in/tarsonmarceloflorencio) | [GitHub](https://github.com/florenciotarson)
