@@ -6,7 +6,7 @@
 
 **Prova de Conceito de Identidade Descentralizada (DID/SSI) desenvolvida para o processo seletivo do Mestrado do PGCOMP/UFBA (Edital 10/2025).**
 
-**🚀 Lab Ao Vivo:** [**https://did.oxecollective.com**](https://did.oxecollective.com)
+**Lab Online:** [**https://did.oxecollective.com**](https://did.oxecollective.com)
 
 ## Motivação
 
