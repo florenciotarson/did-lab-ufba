@@ -1,6 +1,6 @@
 // pages/api/verificar.js
 import { ethers } from 'ethers';
-import abi from '../../lib/IdentidadeDID_ABI.json';
+import abi from '@/lib/IdentidadeDID_ABI.json';
 
 function log(message) { console.log(`[API Verificar] ${new Date().toISOString()}: ${message}`); }
 

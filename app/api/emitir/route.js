@@ -1,7 +1,7 @@
 // pages/api/emitir.js
 import { ethers } from 'ethers';
-import prisma from '../../lib/prisma'; // Importa nosso Prisma Client
-import abi from '../../lib/IdentidadeDID_ABI.json'; // Importa o ABI do contrato
+import prisma from '@/lib/prisma'; // Importa nosso Prisma Client
+import abi from '@/lib/IdentidadeDID_ABI.json'; // Importa o ABI do contrato
 
 // Função Helper para log (opcional, mas útil)
 function log(message) { console.log(`[API Emitir] ${new Date().toISOString()}: ${message}`); }
