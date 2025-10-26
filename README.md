@@ -7,7 +7,7 @@
 
 **Lab Online:** <https://did.oxecollective.com>  
 
-**Resumo:** Prova de Conceito (PoC) de **Identidade Descentralizada (DID/SSI)** para o **PGCOMP/UFBA (Edital 10/2025)**, linha **Sistemas Computacionais (RCSD)**.  
+**Resumo:** Prova de Conceito (PoC) de **Identidade Descentralizada (DID/SSI)** para o **PGCOMP/UFBA**, linha **Sistemas Computacionais (RCSD)**.  
 Foco: **Soberania do usuário**, **Privacidade (Zero-Knowledge)**, **Tolerância a Falhas** e **Web Descentralizada**.
 
 ---
@@ -318,7 +318,4 @@ Principais funções (exemplo):
 
 <!-- end list -->
 
-```
-
-Você pode copiar todo o bloco de código acima e salvar como o arquivo `README.md`.
 ```
