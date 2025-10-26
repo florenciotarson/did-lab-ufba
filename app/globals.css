@@ -1,11 +1,13 @@
+/* Tailwind v4: importa tudo (preflight + utilities) */
 @import "tailwindcss";
 
+/* Suas variáveis (ok manter) */
 :root {
   --background: #ffffff;
   --foreground: #171717;
 }
 
-@theme inline {
+:root[data-theme="inline"] {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
@@ -19,8 +21,8 @@
   }
 }
 
+/* Importante: não defina background/color aqui para não
+   anular as classes Tailwind do <body> no layout.tsx */
 body {
-  background: var(--background);
-  color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
