@@ -76,7 +76,7 @@ Sistemas IAM centralizados (OAuth/SAML/Okta/Auth0) exibem limitações:
 |-------------------|-------------------------------------------------------------------------------------|
 | Front/Back        | **Next.js (App Router)**, React, Vercel Functions                                  |
 | Estilo            | **Tailwind CSS v4** (preflight)                                                     |
-| Web3              | **Ethers v6**                                                                       |
+| Web3              | **Ethers v5**                                                                       |
 | Blockchain        | **Solidity** na **Sepolia Testnet**                                                 |
 | Banco de Dados    | **Neon Serverless Postgres** + **Prisma ORM**                                       |
 | Infra Auxiliar    | **Alchemy** (RPC Sepolia), **Cloudflare** (DNS)                                     |
