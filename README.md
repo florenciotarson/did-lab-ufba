@@ -16,11 +16,11 @@ Foco: **Soberania do usuário**, **Privacidade (Zero-Knowledge)**, **Tolerância
 
 ## O que há de novo
 
-* 🔐 **Criptografia real no cliente** (AES-GCM + PBKDF2 via WebCrypto) — o backend nunca vê o JSON em claro.
-* 🕵️ **Verificação “privada”**: o verificador envia só o `hashVerificacao` (não precisa enviar o JSON).
-* ♻️ **Compatibilidade legado** preservada (ainda aceita enviar o JSON).
-* 🌐 **Padrões W3C**: endpoints para **Verifiable Credentials (VC-JWT)** com `did:ethr` (`/api/vc/emitir`, `/api/vc/verificar`).
-* 🧼 **Higiene**: hash canônico (RFC 8785), logs sem PII, headers anti-cache, idempotência e normalização de endereço.
+*  **Criptografia real no cliente** (AES-GCM + PBKDF2 via WebCrypto) — o backend nunca vê o JSON em claro.
+*  **Verificação “privada”**: o verificador envia só o `hashVerificacao` (não precisa enviar o JSON).
+*  **Compatibilidade legado** preservada (ainda aceita enviar o JSON).
+*  **Padrões W3C**: endpoints para **Verifiable Credentials (VC-JWT)** com `did:ethr` (`/api/vc/emitir`, `/api/vc/verificar`).
+*  **Higiene**: hash canônico (RFC 8785), logs sem PII, headers anti-cache, idempotência e normalização de endereço.
 
 ---
 
@@ -76,11 +76,11 @@ Sistemas IAM centralizados (OAuth/SAML/Okta/Auth0) exibem limitações:
 
 ## Funcionalidades
 
-* ✅ **Emissão** (`/api/emitir`): gera **hash canônico** e registra on-chain com a conta **Emissora**; armazena metadados + blob **cifrado** no Postgres.
-* 🔍 **Verificação Pública (ZK-style)** (`/api/verificar` + UI): retorna **VERDADEIRO/FALSO** consultando o contrato via `view`.
-* ❌ **Revogação pelo Usuário**: o titular assina e chama `revogarCredencial` no contrato.
-* 💾 **Backup/Exportação** (`/api/exportar`): exporta **todos os blobs cifrados** do usuário para `backup.json`.
-* 🌐 **W3C VC-JWT (opcional)**: emitir/verificar **Verifiable Credentials** interoperáveis.
+*  **Emissão** (`/api/emitir`): gera **hash canônico** e registra on-chain com a conta **Emissora**; armazena metadados + blob **cifrado** no Postgres.
+*  **Verificação Pública (ZK-style)** (`/api/verificar` + UI): retorna **VERDADEIRO/FALSO** consultando o contrato via `view`.
+*  **Revogação pelo Usuário**: o titular assina e chama `revogarCredencial` no contrato.
+*  **Backup/Exportação** (`/api/exportar`): exporta **todos os blobs cifrados** do usuário para `backup.json`.
+*  **W3C VC-JWT (opcional)**: emitir/verificar **Verifiable Credentials** interoperáveis.
 
 ---
 
@@ -325,7 +325,7 @@ Endpoints opcionais para **Verifiable Credentials**:
 IAM tradicional × SSI/DID, LGPD, Tolerância a Falhas.
 
 **Fase 2 — Prova sem revelar dados (4 min)**
-Emissão → Verificação Pública (UI envia só o **hash**). Mostrar **VERDADEIRO ✅**.
+Emissão → Verificação Pública (UI envia só o **hash**). Mostrar **VERDADEIRO**.
 
 **Fase 3 — Soberania (2 min)**
 **Revogação** on-chain com MetaMask. **Exportar** carteira de dados (`backup.json`).
@@ -365,5 +365,3 @@ Próximos passos: **W3C completo + ZK** e **IoT/Edge**.
 * **LinkedIn:** [https://www.linkedin.com/in/tarsonmarceloflorencio/](https://www.linkedin.com/in/tarsonmarceloflorencio/)
 
 ---
-
-quer que eu gere um **badge** extra para “VC-JWT Enabled” e uma **seção de UI** (prints/gifs) no README? posso te entregar as imagens e o bloco Markdown prontinho.
