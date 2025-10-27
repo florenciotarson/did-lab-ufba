@@ -338,7 +338,7 @@ const Page: React.FC = () => {
             Este lab demonstra uma arquitetura de identidade digital centrada em
             <strong> privacidade</strong>, <strong>soberania do usuário</strong> e <strong>inclusão</strong>,
             alinhada à <strong>LGPD</strong> e às pesquisas da <strong>RNP</strong>. Em contraste com
-            modelos centralizados (Okta/OAuth), a <strong>Identidade Descentralizada (DID)</strong>
+            modelos centralizados (Okta/OAuth), a <strong>Identidade Descentralizada (DID)</strong> 
             devolve o controle criptográfico ao cidadão.
           </p>
 
