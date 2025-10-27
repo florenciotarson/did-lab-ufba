@@ -2,617 +2,627 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { isAddress, BrowserProvider, JsonRpcSigner, Contract, keccak256, toUtf8Bytes } from 'ethers';
+import canonicalize from 'canonicalize';
+import {
+  isAddress,
+  BrowserProvider,
+  JsonRpcSigner,
+  Contract,
+  keccak256,
+  toUtf8Bytes,
+} from 'ethers';
 import abi from '@/lib/IdentidadeDID_ABI.json';
+import { encryptJSON } from '@/lib/cryptoClient.js';
 
-declare global {
-  interface Window { ethereum?: any; }
-}
+declare global { interface Window { ethereum?: any; } }
 
 type LogLevel = 'info' | 'success' | 'error' | 'step';
-interface LogEntry {
-  timestamp: string;
-  level: LogLevel;
-  message: string;
-}
+interface LogEntry { timestamp: string; level: LogLevel; message: string; }
 
-const LabDIDPage: React.FC = () => {
-  // --- Estados Globais ---
+const EXAMPLE_USER_ADDRESS = '0xSEU_ENDERECO_DE_TESTE_AQUI';
+const EXAMPLE_CREDENTIAL_JSON = '{"status":"ATIVO", "curso":"PGCOMP"}';
+
+const Page: React.FC = () => {
+  // ---- Estado base ----
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [userAddress, setUserAddress] = useState<string | null>(null);
   const [provider, setProvider] = useState<BrowserProvider | null>(null);
   const [signer, setSigner] = useState<JsonRpcSigner | null>(null);
+  const providerRef = useRef<BrowserProvider | null>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
-  // referencia estável do provider
-  const providerRef = useRef<BrowserProvider | null>(null);
-
-  // --- Estados do Formulário: Emissão ---
+  // ---- Emissão ----
   const [emitirUsuarioAddr, setEmitirUsuarioAddr] = useState('');
-  const [emitirDadosJson, setEmitirDadosJson] = useState('{"status":"ATIVO", "curso":"PGCOMP"}');
+  const [emitirDadosJson, setEmitirDadosJson] = useState(EXAMPLE_CREDENTIAL_JSON);
   const [emitirNomeAmigavel, setEmitirNomeAmigavel] = useState('Matrícula Ativa PGCOMP');
   const [emitirDescricao, setEmitirDescricao] = useState(`Emitido em ${new Date().toLocaleDateString()}`);
+  const [emitirSenha, setEmitirSenha] = useState('');
   const [isLoadingEmitir, setIsLoadingEmitir] = useState(false);
+  const [showEmitirHelp, setShowEmitirHelp] = useState(true);
 
-  // --- Estados do Formulário: Verificação ---
+  // ---- Verificação ----
   const [verificarUsuarioAddr, setVerificarUsuarioAddr] = useState('');
-  const [verificarDadosJson, setVerificarDadosJson] = useState('{"status":"ATIVO", "curso":"PGCOMP"}');
+  const [verificarDadosJson, setVerificarDadosJson] = useState(EXAMPLE_CREDENTIAL_JSON);
   const [isLoadingVerificar, setIsLoadingVerificar] = useState(false);
   const [resultadoVerificacao, setResultadoVerificacao] = useState<boolean | null>(null);
   const [hashVerificado, setHashVerificado] = useState<string | null>(null);
+  const [showVerificarHelp, setShowVerificarHelp] = useState(true);
 
-  // --- Estados do Formulário: Revogação ---
-  const [revogarDadosJson, setRevogarDadosJson] = useState('{"status":"ATIVO", "curso":"PGCOMP"}');
+  // ---- Revogação ----
+  const [revogarDadosJson, setRevogarDadosJson] = useState(EXAMPLE_CREDENTIAL_JSON);
   const [isLoadingRevoke, setIsLoadingRevoke] = useState(false);
+  const [showRevogarHelp, setShowRevogarHelp] = useState(true);
 
-  // --- Estados do Formulário: Exportação ---
+  // ---- Exportação ----
   const [isLoadingExport, setIsLoadingExport] = useState(false);
+  const [showExportarHelp, setShowExportarHelp] = useState(true);
 
-  // --- Dados de Exemplo ---
-  const EXAMPLE_USER_ADDRESS = '0xSEU_ENDERECO_DE_TESTE_AQUI';
-  const EXAMPLE_CREDENTIAL_JSON = '{"status":"ATIVO", "curso":"PGCOMP"}';
+  // ---- UI: cópia ----
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
 
-  // Feedback de cópia
-  const [copyStatus, setCopyStatus] = useState<'address' | 'json' | null>(null);
-
-  // --- Logs ---
+  // ========== Helpers de UX ==========
   const addLog = (message: string, level: LogLevel = 'info') => {
     const timestamp = new Date().toLocaleTimeString();
     const newEntry: LogEntry = { timestamp, level, message };
-    console.log(`[${level.toUpperCase()}] ${message}`);
-    setLogs(prev => [newEntry, ...prev.slice(0, 19)]);
+    setLogs(prev => [newEntry, ...prev.slice(0, 199)]);
     setTimeout(() => { if (logContainerRef.current) logContainerRef.current.scrollTop = 0; }, 50);
+    // eslint-disable-next-line no-console
+    console.log(`[${level.toUpperCase()}] ${message}`);
   };
 
-  const getLogColor = (level: LogLevel): string => {
-    switch (level) {
-      case 'success': return 'text-green-400';
-      case 'error': return 'text-red-400';
-      case 'step': return 'text-yellow-400';
-      case 'info':
-      default: return 'text-gray-400';
-    }
-  };
-  const getLogEmoji = (level: LogLevel): string => {
-    switch (level) {
-      case 'success': return '✅';
-      case 'error': return '❌';
-      case 'step': return '➡️';
-      case 'info':
-      default: return '🔵';
-    }
-  };
+  const getLogColor = (level: LogLevel) =>
+    level === 'success' ? 'text-green-400' :
+    level === 'error' ? 'text-red-400' :
+    level === 'step' ? 'text-yellow-400' : 'text-gray-400';
 
-  const safeJsonParse = (jsonString: string): boolean => {
-    try { JSON.parse(jsonString); return true; } catch { return false; }
-  };
+  const getLogEmoji = (level: LogLevel) =>
+    level === 'success' ? '✅' : level === 'error' ? '❌' : level === 'step' ? '➡️' : '🔵';
 
-  const copyToClipboard = async (text: string, type: 'address' | 'json') => {
-    if (!navigator.clipboard) { addLog('Erro: Clipboard API não disponível.', 'error'); return; }
+  const safeJsonParse = (s: string) => { try { JSON.parse(s); return true; } catch { return false; } };
+
+  const copyToClipboard = async (text: string, label: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      addLog(`${type === 'address' ? 'Endereço' : 'JSON'} de exemplo copiado!`, 'success');
-      setCopyStatus(type);
-      setTimeout(() => setCopyStatus(null), 1500);
-    } catch (err) {
-      addLog(`Erro ao copiar ${type === 'address' ? 'endereço' : 'JSON'}.`, 'error');
-      console.error('Falha ao copiar:', err);
+      setCopyStatus(label);
+      setTimeout(() => setCopyStatus(null), 1200);
+      addLog(`${label} copiado para a área de transferência.`, 'success');
+    } catch {
+      addLog(`Falha ao copiar ${label}.`, 'error');
     }
   };
 
-  // --- Conexão com MetaMask (uma vez) ---
+  // hash canônico (RFC 8785) com checagem
+  const computeCanonicalHashLocal = (jsonStr: string) => {
+    const obj = JSON.parse(jsonStr);
+    const canon = canonicalize(obj);
+    if (typeof canon !== 'string') throw new Error('Falha ao canonicalizar o JSON.');
+    return keccak256(toUtf8Bytes(canon));
+  };
+
+  // pequena prévia do hash (para UX)
+  const tryHash = (jsonStr: string): string | null => {
+    try { if (!safeJsonParse(jsonStr)) return null; return computeCanonicalHashLocal(jsonStr); }
+    catch { return null; }
+  };
+
+  // ========== Wallet ==========
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const handleAccountsChanged = async (newAccounts: string[]) => {
+    const handleAccountsChanged = async (accs: string[]) => {
       const ethProvider = providerRef.current;
       if (!ethProvider) return;
-
-      if (newAccounts.length > 0) {
-        const newAddress = newAccounts[0];
-        setUserAddress(newAddress);
-        try {
-          const newSigner = await ethProvider.getSigner(newAddress);
-          setSigner(newSigner);
-          addLog(`Conta MetaMask alterada para: ${newAddress.substring(0, 6)}...`, 'info');
-        } catch (err) {
-          console.error('Erro ao obter novo signer:', err);
-          addLog('Erro ao obter signer da conta alterada.', 'error');
-          setSigner(null);
-        }
-      } else {
-        setUserAddress(null);
-        setSigner(null);
-        addLog('Carteira MetaMask desconectada.', 'info');
-      }
+      if (accs.length > 0) {
+        const addr = accs[0];
+        setUserAddress(addr);
+        try { const s = await ethProvider.getSigner(addr); setSigner(s); addLog(`Conta selecionada: ${addr.substring(0,6)}...`, 'info'); }
+        catch { setSigner(null); addLog('Erro ao obter signer da conta selecionada.', 'error'); }
+      } else { setUserAddress(null); setSigner(null); addLog('Carteira desconectada.', 'info'); }
     };
 
-    const initializeProvider = async () => {
-      if (!window.ethereum) {
-        addLog('MetaMask não detectado. Instale a extensão.', 'error');
-        return;
-      }
-
+    const init = async () => {
+      if (!window.ethereum) { addLog('MetaMask não detectado. Instale a extensão para usar revogação e exportação.', 'error'); return; }
       const ethProvider = new BrowserProvider(window.ethereum);
       providerRef.current = ethProvider;
       setProvider(ethProvider);
-      addLog('Provider MetaMask inicializado.', 'info');
-
-      const accounts = await ethProvider.listAccounts();
-      if (accounts.length > 0) {
-        const currentAddress = accounts[0].address;
-        setUserAddress(currentAddress);
-        try {
-          const currentSigner = await ethProvider.getSigner(currentAddress);
-          setSigner(currentSigner);
-          addLog(`Carteira ${currentAddress.substring(0, 6)}... reconectada.`, 'success');
-        } catch (err) {
-          console.error('Erro ao obter signer:', err);
-          addLog('Erro ao obter signer da conta reconectada.', 'error');
-        }
-      } else {
-        addLog('Nenhuma conta MetaMask conectada encontrada.', 'info');
+      const accs = await ethProvider.listAccounts();
+      if (accs.length > 0) {
+        const addr = accs[0].address;
+        setUserAddress(addr);
+        try { const s = await ethProvider.getSigner(addr); setSigner(s); addLog(`Carteira reconectada: ${addr.substring(0,6)}...`, 'success'); }
+        catch { addLog('Falha ao recuperar signer da carteira atual.', 'error'); }
       }
-
       window.ethereum.on('accountsChanged', handleAccountsChanged);
     };
+    init();
 
-    initializeProvider();
-
-    return () => {
-      if (window.ethereum?.removeListener) {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-      }
-    };
+    return () => { if (window.ethereum?.removeListener) window.ethereum.removeListener('accountsChanged', handleAccountsChanged); };
   }, []);
 
   const connectWallet = async () => {
-    let currentProvider = providerRef.current || provider;
-
-    if (!currentProvider && typeof window.ethereum !== 'undefined') {
-      try {
-        currentProvider = new BrowserProvider(window.ethereum);
-        providerRef.current = currentProvider;
-        setProvider(currentProvider);
-        addLog('Provider MetaMask inicializado na conexão.', 'info');
-      } catch {
-        addLog('Falha ao inicializar Provider MetaMask na conexão.', 'error');
-        return;
-      }
-    } else if (!currentProvider) {
-      addLog('MetaMask não detectado. Instale a extensão.', 'error');
-      return;
-    }
-
+    const currentProvider = providerRef.current || (window.ethereum ? new BrowserProvider(window.ethereum) : null);
+    if (!currentProvider) { addLog('MetaMask não detectado.', 'error'); return; }
+    if (!providerRef.current) { providerRef.current = currentProvider; setProvider(currentProvider); }
     try {
       addLog('Solicitando conexão com MetaMask...', 'step');
       const accounts = await currentProvider.send('eth_requestAccounts', []) as string[];
       if (accounts.length > 0) {
-        const newAddress = accounts[0];
-        setUserAddress(newAddress);
-        const newSigner = await currentProvider.getSigner(newAddress);
-        setSigner(newSigner);
-        addLog(`Carteira ${newAddress.substring(0, 6)}... conectada!`, 'success');
-      } else {
-        addLog('Nenhuma conta selecionada no MetaMask.', 'info');
+        const addr = accounts[0];
+        setUserAddress(addr);
+        const s = await currentProvider.getSigner(addr);
+        setSigner(s);
+        addLog(`Carteira conectada: ${addr.substring(0,6)}...`, 'success');
       }
-    } catch (error: any) {
-      addLog(`Erro ao conectar carteira: ${error.message}`, 'error');
-      if (error.code === 4001) { addLog('Conexão rejeitada pelo usuário.', 'error'); }
+    } catch (e: any) {
+      addLog(`Conexão cancelada: ${e.message}`, 'error');
     }
   };
 
-  // --- Funções de Interação com API ---
-  const handleEmitirCredencial = async () => {
-    if (!isAddress(emitirUsuarioAddr)) { addLog('Erro Emissão: Endereço do usuário inválido.', 'error'); return; }
-    if (!safeJsonParse(emitirDadosJson)) { addLog('Erro Emissão: Dados da Credencial (JSON) inválidos.', 'error'); return; }
+  // ========== Ações ==========
+  const handleEmitir = async () => {
+    if (!isAddress(emitirUsuarioAddr)) { addLog('Endereço do destinatário inválido.', 'error'); return; }
+    if (!safeJsonParse(emitirDadosJson)) { addLog('JSON inválido para emissão.', 'error'); return; }
 
-    setIsLoadingEmitir(true); addLog('EMISSÃO: Iniciando...', 'step');
-    setResultadoVerificacao(null); setHashVerificado(null);
+    setIsLoadingEmitir(true); setResultadoVerificacao(null); setHashVerificado(null);
+    addLog('EMISSÃO: iniciando...', 'step');
+
     try {
-      addLog('EMISSÃO: Enviando requisição para /api/emitir...', 'step');
-      const response = await fetch('/api/emitir', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          usuarioAddress: emitirUsuarioAddr, dadosCredencialJsonString: emitirDadosJson,
-          nomeAmigavel: emitirNomeAmigavel, descricao: emitirDescricao,
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || `Erro HTTP ${response.status}: ${response.statusText}`);
+      const hashVerificacao = computeCanonicalHashLocal(emitirDadosJson);
+      const seguro = emitirSenha.trim().length > 0;
 
-      addLog(`EMISSÃO SUCESSO: ${data.message}`, 'success');
-      addLog(`   ID no DB: ${data.idDb}`, 'info');
-      addLog(`   Hash (Prova): ${data.hashVerificacao}`, 'info');
-      const txLink = data.txHashOnChain ? `${data.txHashOnChain}` : '(já existia on-chain)';
-      addLog(`   Tx On-Chain: ${txLink === '(já existia on-chain)' ? txLink : `https://sepolia.etherscan.io/tx/${txLink}`}`, 'info');
-    } catch (error: any) { addLog(`ERRO EMISSÃO: ${error.message}`, 'error'); }
-    finally { setIsLoadingEmitir(false); }
+      const body = seguro
+        ? {
+            usuarioAddress: emitirUsuarioAddr,
+            hashVerificacao,
+            blobCriptografado: await encryptJSON(emitirDadosJson, emitirSenha),
+            nomeAmigavel: emitirNomeAmigavel,
+            descricao: emitirDescricao,
+          }
+        : {
+            usuarioAddress: emitirUsuarioAddr,
+            dadosCredencialJsonString: emitirDadosJson,
+            nomeAmigavel: emitirNomeAmigavel,
+            descricao: emitirDescricao,
+          };
+
+      const res = await fetch('/api/emitir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+      addLog(`EMISSÃO: ${data.message}`, 'success');
+      addLog(`ID no DB: ${data.idDb}`, 'info');
+      addLog(`Hash canônico: ${data.hashVerificacao}`, 'info');
+      addLog(`Transação: ${data.txHashOnChain ? `https://sepolia.etherscan.io/tx/${data.txHashOnChain}` : '(já existia on-chain)'}`, 'info');
+    } catch (e: any) {
+      addLog(`Falha na emissão: ${e.message}`, 'error');
+    } finally {
+      setIsLoadingEmitir(false);
+    }
   };
 
-  const handleVerificarCredencial = async () => {
-    if (!isAddress(verificarUsuarioAddr)) { addLog('Erro Verificação: Endereço do usuário inválido.', 'error'); return; }
-    if (!safeJsonParse(verificarDadosJson)) { addLog('Erro Verificação: Dados Exatos da Credencial (JSON) inválidos.', 'error'); return; }
+  const handleVerificar = async () => {
+    if (!isAddress(verificarUsuarioAddr)) { addLog('Endereço do usuário inválido para verificação.', 'error'); return; }
+    if (!safeJsonParse(verificarDadosJson)) { addLog('JSON inválido para verificação.', 'error'); return; }
 
-    setIsLoadingVerificar(true); addLog('VERIFICAÇÃO: Iniciando consulta...', 'step');
-    setResultadoVerificacao(null); setHashVerificado(null);
+    setIsLoadingVerificar(true); setResultadoVerificacao(null); setHashVerificado(null);
+    addLog('VERIFICAÇÃO: calculando hash local e consultando blockchain...', 'step');
+
     try {
-      addLog('VERIFICAÇÃO: Enviando requisição para /api/verificar...', 'step');
-      const response = await fetch('/api/verificar', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          usuarioAddress: verificarUsuarioAddr, dadosCredencialJsonString: verificarDadosJson,
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || `Erro HTTP ${response.status}: ${response.statusText}`);
+      const hashVerificacao = computeCanonicalHashLocal(verificarDadosJson);
+      const res = await fetch('/api/verificar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuarioAddress: verificarUsuarioAddr, hashVerificacao }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
 
-      addLog(`VERIFICAÇÃO: Consulta realizada para o hash: ${data.hashVerificacao}`, 'info');
       setResultadoVerificacao(data.verificado);
       setHashVerificado(data.hashVerificacao);
-      addLog(
-        `VERIFICAÇÃO RESULTADO: ${data.verificado ? 'VERDADEIRO ✅ (Credencial Válida e Ativa na Blockchain!)' : 'FALSO ❌ (Credencial Inválida, Revogada ou Inexistente na Blockchain)'}`,
-        data.verificado ? 'success' : 'error'
-      );
-    } catch (error: any) { addLog(`ERRO VERIFICAÇÃO: ${error.message}`, 'error'); }
-    finally { setIsLoadingVerificar(false); }
+      addLog(`VERIFICAÇÃO: ${data.verificado ? 'VERDADEIRO ✅' : 'FALSO ❌'}`, data.verificado ? 'success' : 'error');
+    } catch (e: any) {
+      addLog(`Falha na verificação: ${e.message}`, 'error');
+    } finally {
+      setIsLoadingVerificar(false);
+    }
   };
 
-  // --- Revogação (Contrato) ---
-  const handleRevogarCredencial = async () => {
-    if (!signer || !userAddress) {
-      addLog('Erro Revogação: Carteira MetaMask não conectada.', 'error');
-      connectWallet(); return;
-    }
-    if (!safeJsonParse(revogarDadosJson)) {
-      addLog('Erro Revogação: Dados da Credencial (JSON) inválidos.', 'error'); return;
-    }
+  const handleRevogar = async () => {
+    if (!signer || !userAddress) { addLog('Conecte sua carteira para revogar.', 'error'); connectWallet(); return; }
+    if (!safeJsonParse(revogarDadosJson)) { addLog('JSON inválido para revogação.', 'error'); return; }
     const contractAddress = process.env.NEXT_PUBLIC_CONTRATO_ENDERECO;
-    if (!contractAddress || !isAddress(contractAddress)) {
-      addLog('Erro Revogação: Endereço do contrato inválido ou não configurado (.env).', 'error'); return;
-    }
+    if (!contractAddress || !isAddress(contractAddress)) { addLog('Contrato não configurado corretamente (.env).', 'error'); return; }
 
     setIsLoadingRevoke(true);
-    addLog(`REVOGAÇÃO: Iniciando para credencial: ${revogarDadosJson}`, 'step');
-    setResultadoVerificacao(null); setHashVerificado(null);
-
+    addLog('REVOGAÇÃO: gerando hash e enviando transação...', 'step');
     try {
-      addLog('REVOGAÇÃO: Gerando hash Keccak256...', 'step');
-      const hashParaRevogar = keccak256(toUtf8Bytes(revogarDadosJson));
-      addLog(`REVOGAÇÃO: Hash gerado: ${hashParaRevogar}`, 'info');
-
-      addLog(`REVOGAÇÃO: Conectando ao contrato em ${contractAddress.substring(0, 6)}...`, 'step');
+      const canon = canonicalize(JSON.parse(revogarDadosJson));
+      if (typeof canon !== 'string') throw new Error('Falha ao canonicalizar JSON.');
+      const hash = keccak256(toUtf8Bytes(canon));
       const contrato = new Contract(contractAddress, abi, signer);
-
-      addLog('REVOGAÇÃO: Solicitando assinatura e envio da transação...', 'step');
-      const tx = await contrato.revogarCredencial(hashParaRevogar);
-      addLog(`REVOGAÇÃO: Transação enviada: ${tx.hash}. Aguardando confirmação...`, 'info');
-
-      const receipt = await tx.wait(1);
-      if (receipt?.status === 1) {
-        addLog(`REVOGAÇÃO SUCESSO: Credencial (hash ${hashParaRevogar.substring(0, 10)}...) revogada on-chain!`, 'success');
-        addLog(`   Tx: https://sepolia.etherscan.io/tx/${tx.hash}`, 'info');
-      } else {
-        throw new Error(`Transação falhou on-chain (Status: ${receipt?.status}). Verifique o Etherscan.`);
-      }
-    } catch (error: any) {
-      addLog(`ERRO REVOGAÇÃO: ${error.reason || error.message}`, 'error');
-      console.error('Erro detalhado na revogação:', error);
-      if (error.code === 4001) { addLog('REVOGAÇÃO: Transação rejeitada pelo usuário.', 'error'); }
-      if (error.reason?.includes('Credencial nao encontrada ou ja foi revogada')) {
-        addLog('REVOGAÇÃO: Credencial não encontrada para sua conta ou já revogada.', 'error');
-      }
-    } finally { setIsLoadingRevoke(false); }
-  };
-
-  // --- Exportação ---
-  const handleExportarDados = async () => {
-    if (!userAddress) {
-      addLog('Erro Exportação: Carteira não conectada.', 'error');
-      connectWallet(); return;
+      const tx = await contrato.revogarCredencial(hash);
+      addLog(`TX enviada: ${tx.hash} — aguardando 1 bloco...`, 'info');
+      const rc = await tx.wait(1);
+      if (rc?.status === 1) {
+        addLog('REVOGAÇÃO concluída com sucesso!', 'success');
+        addLog(`Etherscan: https://sepolia.etherscan.io/tx/${tx.hash}`, 'info');
+      } else throw new Error(`Transação falhou (status ${rc?.status})`);
+    } catch (e: any) {
+      addLog(`Falha na revogação: ${e.reason || e.message}`, 'error');
+    } finally {
+      setIsLoadingRevoke(false);
     }
-
-    setIsLoadingExport(true);
-    addLog(`EXPORTAÇÃO: Iniciando para o usuário ${userAddress.substring(0, 6)}...`, 'step');
-
-    try {
-      addLog('EXPORTAÇÃO: Solicitando dados da API /api/exportar...', 'step');
-      const response = await fetch(`/api/exportar?userAddress=${userAddress}`);
-      if (!response.ok) {
-        let errorMsg = `Erro HTTP ${response.status}: ${response.statusText}`;
-        try { const errorData = await response.json(); errorMsg = errorData.message || errorMsg; } catch {}
-        throw new Error(errorMsg);
-      }
-
-      const disposition = response.headers.get('content-disposition');
-      let filename = `did_lab_backup_${userAddress.substring(0, 6)}_${Date.now()}.json`;
-      if (disposition && disposition.includes('attachment')) {
-        const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
-        const matches = filenameRegex.exec(disposition);
-        if (matches?.[1]) { filename = matches[1].replace(/['"]/g, ''); }
-      }
-
-      addLog(`EXPORTAÇÃO: Preparando download do arquivo "${filename}"...`, 'step');
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.style.display = 'none'; a.href = url; a.download = filename;
-      document.body.appendChild(a); a.click();
-      window.URL.revokeObjectURL(url); a.remove();
-      addLog(`EXPORTAÇÃO SUCESSO: Arquivo "${filename}" gerado para download.`, 'success');
-
-    } catch (error: any) { addLog(`ERRO EXPORTAÇÃO: ${error.message}`, 'error'); }
-    finally { setIsLoadingExport(false); }
   };
 
-  // --- Renderização ---
+  const handleExportar = async () => {
+    if (!userAddress) { addLog('Conecte sua carteira para exportar.', 'error'); connectWallet(); return; }
+    setIsLoadingExport(true);
+    addLog('EXPORTAÇÃO: preparando seu arquivo de backup...', 'step');
+    try {
+      const res = await fetch(`/api/exportar?userAddress=${userAddress}`);
+      if (!res.ok) {
+        let m = `HTTP ${res.status}`; try { const d = await res.json(); m = d.message || m; } catch {}
+        throw new Error(m);
+      }
+      const disp = res.headers.get('content-disposition');
+      let filename = `did_lab_backup_${userAddress.substring(0,6)}_${Date.now()}.json`;
+      if (disp && disp.includes('attachment')) {
+        const m = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disp);
+        if (m?.[1]) filename = m[1].replace(/['"]/g, '');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = filename; a.style.display = 'none';
+      document.body.appendChild(a); a.click(); URL.revokeObjectURL(url); a.remove();
+      addLog(`Backup gerado: ${filename}`, 'success');
+    } catch (e: any) {
+      addLog(`Falha na exportação: ${e.message}`, 'error');
+    } finally {
+      setIsLoadingExport(false);
+    }
+  };
+
+  // ========== UI ==========
+  const hint = (txt: string) => <span className="text-xs text-gray-400">{txt}</span>;
+  const HashPreview = ({ jsonStr, label }: { jsonStr: string; label: string }) => {
+    const h = tryHash(jsonStr);
+    if (!h) return hint('Hash aparecerá aqui quando o JSON for válido.');
+    return (
+      <div className="flex items-center gap-2 mt-1 text-xs">
+        <span className="text-gray-400">Hash canônico:</span>
+        <code className="bg-gray-700 px-2 py-0.5 rounded break-all">{h}</code>
+        <button
+          onClick={() => copyToClipboard(h, `${label} (hash)`)}
+          className={`text-xs ${copyStatus === `${label} (hash)` ? 'bg-green-600' : 'bg-gray-600 hover:bg-gray-500'} text-white px-2 py-0.5 rounded`}
+          title="Copiar hash"
+        >
+          {copyStatus === `${label} (hash)` ? 'Copiado!' : 'Copiar'}
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-900 text-gray-200 p-4 md:p-8">
       {/* Header */}
-      <header className="text-center mb-10">
-        <h1 className="text-3xl md:text-4xl font-bold text-cyan-400 mb-2">Identidade Soberana (DID/SSI)</h1>
-        <p className="text-md md:text-lg text-gray-400">Prova de Conceito - Projeto Mestrado PGCOMP/UFBA</p>
-        <p className="text-sm mt-1">Desenvolvido por: Tarson Marcelo Florêncio</p>
-        <div className="mt-4 flex flex-col sm:flex-row justify-center items-center gap-4">
-          <a
-            href="https://github.com/florenciotarson/did-lab-ufba"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-cyan-500 hover:text-cyan-300 underline"
-          >
-            Ver Código no GitHub
-          </a>
-          {userAddress ? (
-            <span className="bg-gray-700 text-xs px-3 py-1 rounded-full" title={`Endereço Completo: ${userAddress}`}>
-              Conectado: {userAddress.substring(0, 6)}...{userAddress.substring(userAddress.length - 4)}
-            </span>
-          ) : (
-            <button
-              onClick={connectWallet}
-              className="bg-blue-600 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded-md transition-colors disabled:opacity-50"
-              disabled={typeof window !== 'undefined' && typeof window.ethereum === 'undefined'}
-              title={typeof window !== 'undefined' && typeof window.ethereum === 'undefined' ? 'Instale a extensão MetaMask' : 'Conectar Carteira'}
+      <header className="max-w-7xl mx-auto mb-8">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl md:text-4xl font-bold text-cyan-400">Identidade Soberana (DID/SSI)</h1>
+            <p className="text-gray-400">Prova de Conceito — PGCOMP/UFBA • Desenvolvido por: Tarson Marcelo Florêncio </p>
+          </div>
+          <div className="flex items-center gap-3">
+            {userAddress ? (
+              <span className="bg-gray-800 border border-gray-700 text-xs px-3 py-1 rounded-full" title={userAddress}>
+                Conectado: {userAddress.substring(0,6)}...{userAddress.substring(userAddress.length-4)}
+              </span>
+            ) : (
+              <button
+                onClick={connectWallet}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-sm py-2 px-3 rounded-md"
+                title="Conectar MetaMask"
+              >
+                Conectar MetaMask
+              </button>
+            )}
+            <a
+              href="https://github.com/florenciotarson/did-lab-ufba"
+              target="_blank" rel="noopener noreferrer"
+              className="text-cyan-400 hover:text-cyan-300 underline text-sm"
             >
-              Conectar MetaMask
-            </button>
-          )}
+              Código no GitHub
+            </a>
+          </div>
+        </div>
+
+        {/* O Projeto (texto institucional, sem redundância com o "Como funciona") */}
+        <div className="mt-4 bg-gray-800 border border-gray-700 rounded p-4 text-sm">
+          <h3 className="text-lg font-semibold text-cyan-400 border-b border-gray-700 pb-2">O Projeto</h3>
+
+          <p className="mt-3 text-gray-300">
+            Este lab demonstra uma arquitetura de identidade digital centrada em
+            <strong> privacidade</strong>, <strong>soberania do usuário</strong> e <strong>inclusão</strong>,
+            alinhada à <strong>LGPD</strong> e às pesquisas da <strong>RNP</strong>. Em contraste com
+            modelos centralizados (Okta/OAuth), a <strong>Identidade Descentralizada (DID)</strong>
+            devolve o controle criptográfico ao cidadão.
+          </p>
+
+          <p className="mt-2 text-gray-300">
+            A prova é ancorada por <strong>Smart Contracts</strong> — atuando como um “cartório”
+            público na blockchain <strong>Sepolia</strong> — e por <strong>armazenamento off-chain
+            cifrado</strong> gerenciado pelo backend. O sistema permite a <strong>verificação
+            Zero-Knowledge</strong>: provar um fato (ex.: “Matrícula Ativa”) sem revelar os dados
+            subjacentes (ex.: CPF, nº de matrícula).
+          </p>
+
+          <p className="mt-2 text-xs text-gray-400">
+            PGCOMP/UFBA — Linha: Sistemas Computacionais • Área: RCSD.
+            Tópicos: Blockchain, Web Descentralizada, Cibersegurança, Internet do Futuro, Tolerância a Falhas.
+          </p>
+        </div>
+
+        {/* Resumo didático */}
+        <div className="mt-4 bg-gray-800 border border-gray-700 rounded p-4 text-sm">
+          <p className="mb-2">
+            <strong>Como funciona:</strong> a credencial é um JSON. Calculamos um <em>hash canônico</em> desse JSON e
+            registramos apenas o hash na blockchain (<em>cartório</em>). O JSON (seu dado pessoal) fica cifrado
+            <em> no cliente</em> e armazenado off-chain. Na verificação, você envia só o hash — e recebe <code>true/false</code>.
+          </p>
+          <ul className="list-disc pl-5 text-gray-300">
+            <li><strong>Privacidade:</strong> seus dados nunca são gravados na blockchain.</li>
+            <li><strong>Soberania:</strong> você pode <em>revogar</em> qualquer credencial com sua carteira.</li>
+            <li><strong>Portabilidade:</strong> faça <em>backup</em> de tudo em um arquivo (cifrado).</li>
+          </ul>
         </div>
       </header>
 
-      {/* Grid Principal */}
+      {/* Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-7xl mx-auto">
 
-        {/* O Projeto — expandido (ocupa 2 colunas) */}
-        <section className="bg-gray-800 p-6 rounded-lg shadow-md lg:col-span-2">
-          <h2 className="text-xl font-semibold mb-3 text-cyan-400 border-b border-gray-700 pb-2">O Projeto</h2>
-          <p className="text-sm mb-2">
-            Este lab demonstra uma arquitetura de identidade digital focada em <strong>privacidade</strong>, <strong>soberania do usuário</strong> e <strong>inclusão</strong>,
-            alinhada à LGPD e às pesquisas da RNP. Em contraste com modelos centralizados (Okta/OAuth),
-            a Identidade Descentralizada (DID) devolve o controle criptográfico ao cidadão.
-          </p>
-          <p className="text-sm mb-2">
-            Utilizando Smart Contracts (atuando como "Cartório" público na blockchain Sepolia) e armazenamento off-chain criptografado
-            (gerenciado pelo backend), o sistema permite a <strong>verificação Zero-Knowledge</strong>: provar um fato
-            (ex: "Matrícula Ativa") sem revelar os dados subjacentes (ex: CPF, nº de matrícula).
-          </p>
-          <p className="text-xs text-gray-500">
-            PGCOMP/UFBA: Linha Sistemas Computacionais, Área RCSD. Tópicos: Blockchain, Web Descentralizada, Cibersegurança, Internet do Futuro, Tolerância a Falhas.
-          </p>
-        </section>
+        {/* 1. Verificação */}
+        <section className="bg-gray-800 p-6 rounded-lg shadow-md border-l-4 border-cyan-600">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-cyan-400">1. Verificação Pública</h2>
+            <button
+              onClick={() => setShowVerificarHelp(s => !s)}
+              className="text-xs underline text-gray-300 hover:text-white"
+            >
+              {showVerificarHelp ? 'Ocultar instruções' : 'Mostrar instruções'}
+            </button>
+          </div>
+          {showVerificarHelp && (
+            <ol className="mt-3 text-sm text-gray-300 space-y-2">
+              <li><strong>1)</strong> Cole o <em>endereço do titular</em> da credencial.</li>
+              <li><strong>2)</strong> Cole a <em>string JSON exata</em> (precisa bater 100%).</li>
+              <li><strong>3)</strong> Clique <em>Verificar</em>. A UI calcula o hash e a blockchain responde <code>true/false</code>.</li>
+              <li className="text-yellow-300"><strong>Dica:</strong> use os exemplos abaixo ou gere sua própria credencial na seção 2.</li>
+            </ol>
+          )}
 
-        {/* 1. Verificação — esquerda */}
-        <section className="bg-gray-800 p-6 rounded-lg shadow-md border-l-4 border-cyan-600 lg:col-start-1">
-          <h2 className="text-xl font-semibold mb-3 text-cyan-400 border-b border-gray-700 pb-2">1. Verificação Pública (Zero-Knowledge)</h2>
-          <p className="text-sm mb-4 text-gray-400">
-            <strong>Instruções:</strong> Qualquer um pode usar esta seção. Cole o endereço de um usuário e a string JSON <i>exata</i> da credencial que você quer verificar. O sistema consultará a blockchain (sem custo) e dirá apenas se a prova (hash) existe e está ativa (VERDADEIRO) ou não (FALSO), <strong>sem revelar nenhum dado pessoal</strong>.
-          </p>
-
-          {/* Exemplo Clicável */}
-          <div className="text-xs mb-4 p-3 bg-gray-700 rounded border border-yellow-600">
-            <span className="font-semibold text-yellow-400 block mb-1">Exemplo para Teste:</span>
-            (Use após emitir a credencial na seção 2 para este endereço):
-            <div className="flex items-center gap-2 mt-1">
-              <span className="w-12 inline-block font-medium">Endereço:</span>
-              <code className="bg-gray-600 px-1 rounded grow break-all">{EXAMPLE_USER_ADDRESS}</code>
+          {/* Exemplos */}
+          <div className="mt-4 text-xs p-3 bg-gray-700 rounded border border-yellow-600">
+            <div className="flex items-center gap-2">
+              <span className="w-16 inline-block">Endereço:</span>
+              <code className="bg-gray-600 px-2 rounded grow break-all">{EXAMPLE_USER_ADDRESS}</code>
               <button
-                onClick={() => copyToClipboard(EXAMPLE_USER_ADDRESS, 'address')}
-                className={`text-xs ${copyStatus === 'address' ? 'bg-green-600' : 'bg-gray-500 hover:bg-gray-400'} text-white px-2 py-0.5 rounded transition-colors`}
-                title="Copiar Endereço"
+                onClick={() => copyToClipboard(EXAMPLE_USER_ADDRESS, 'Endereço de exemplo')}
+                className={`text-xs ${copyStatus ? 'bg-green-600' : 'bg-gray-600 hover:bg-gray-500'} text-white px-2 py-0.5 rounded`}
               >
-                {copyStatus === 'address' ? 'Copiado!' : 'Copiar'}
+                {copyStatus ? 'Copiado!' : 'Copiar'}
               </button>
             </div>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="w-12 inline-block font-medium">JSON:</span>
-              <code className="bg-gray-600 px-1 rounded grow break-all">{EXAMPLE_CREDENTIAL_JSON}</code>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="w-16 inline-block">JSON:</span>
+              <code className="bg-gray-600 px-2 rounded grow break-all">{EXAMPLE_CREDENTIAL_JSON}</code>
               <button
-                onClick={() => copyToClipboard(EXAMPLE_CREDENTIAL_JSON, 'json')}
-                className={`text-xs ${copyStatus === 'json' ? 'bg-green-600' : 'bg-gray-500 hover:bg-gray-400'} text-white px-2 py-0.5 rounded transition-colors`}
-                title="Copiar JSON"
+                onClick={() => copyToClipboard(EXAMPLE_CREDENTIAL_JSON, 'JSON de exemplo')}
+                className="text-xs bg-gray-600 hover:bg-gray-500 text-white px-2 py-0.5 rounded"
               >
-                {copyStatus === 'json' ? 'Copiado!' : 'Copiar'}
+                Copiar
               </button>
             </div>
           </div>
 
-          {/* Formulário de Verificação */}
-          <div className="space-y-3">
+          {/* Form Verificação */}
+          <div className="mt-4 space-y-3">
             <div>
-              <label htmlFor="verifUsuario" className="block text-xs font-medium mb-1">Endereço do Usuário a Verificar:</label>
+              <label htmlFor="verifAddr" className="block text-xs mb-1">Endereço do Usuário</label>
               <input
-                id="verifUsuario"
-                type="text"
-                value={verificarUsuarioAddr}
+                id="verifAddr" type="text" value={verificarUsuarioAddr}
                 onChange={(e) => setVerificarUsuarioAddr(e.target.value)}
-                placeholder="Cole o endereço aqui (ex: 0x...)"
+                placeholder="0x..."
                 className="w-full text-sm bg-gray-700 border border-gray-600 rounded p-2 focus:ring-cyan-500 focus:border-cyan-500"
+                aria-describedby="verifAddrHelp"
               />
+              <div id="verifAddrHelp" className="text-xs text-gray-400 mt-1">O endereço do titular da credencial.</div>
             </div>
             <div>
-              <label htmlFor="verifDados" className="block text-xs font-medium mb-1">Dados Exatos da Credencial (JSON String):</label>
+              <label htmlFor="verifJson" className="block text-xs mb-1">Dados da Credencial (JSON — exato)</label>
               <input
-                id="verifDados"
-                type="text"
-                value={verificarDadosJson}
+                id="verifJson" type="text" value={verificarDadosJson}
                 onChange={(e) => setVerificarDadosJson(e.target.value)}
-                placeholder='Cole o JSON aqui (ex: {"status":"ATIVO", ...})'
+                placeholder='{"status":"ATIVO","curso":"PGCOMP"}'
                 className="w-full text-sm bg-gray-700 border border-gray-600 rounded p-2 focus:ring-cyan-500 focus:border-cyan-500"
               />
+              <HashPreview jsonStr={verificarDadosJson} label="Verificação" />
             </div>
             <button
-              onClick={handleVerificarCredencial}
+              onClick={handleVerificar}
               disabled={isLoadingVerificar}
-              className={`w-full py-2 px-4 rounded font-semibold transition-colors text-sm flex items-center justify-center gap-2 ${isLoadingVerificar ? 'bg-gray-600 cursor-not-allowed' : 'bg-cyan-600 hover:bg-cyan-700'}`}
+              className={`w-full py-2 px-4 rounded font-semibold transition-colors text-sm ${isLoadingVerificar ? 'bg-gray-600' : 'bg-cyan-600 hover:bg-cyan-700'}`}
             >
-              {isLoadingVerificar && <SpinnerIcon />}
-              {isLoadingVerificar ? 'Verificando On-Chain...' : 'Verificar Credencial'}
+              {isLoadingVerificar ? 'Verificando...' : 'Verificar Credencial'}
             </button>
+
             {resultadoVerificacao !== null && (
               <div className={`mt-3 p-3 rounded text-center font-bold text-lg ${resultadoVerificacao ? 'bg-green-800 border-green-600' : 'bg-red-800 border-red-600'} border`}>
                 {resultadoVerificacao ? 'VERDADEIRO ✅' : 'FALSO ❌'}
-                <p className="text-xs font-normal mt-1">{resultadoVerificacao ? 'Prova válida encontrada na Blockchain!' : 'Prova inválida, revogada ou inexistente.'}</p>
-                <p className="text-xs font-mono mt-1 break-all">Hash Verificado: {hashVerificado || 'N/A'}</p>
+                <p className="text-xs font-normal mt-1">{resultadoVerificacao ? 'Prova válida encontrada na blockchain.' : 'Prova inválida, revogada ou inexistente.'}</p>
+                {hashVerificado && <p className="text-[11px] font-mono mt-1 break-all">Hash verificado: {hashVerificado}</p>}
               </div>
             )}
           </div>
         </section>
 
-        {/* 2. Emissão — direita */}
-        <section className="bg-gray-800 p-6 rounded-lg shadow-md border-l-4 border-orange-600 lg:col-start-2">
-          <h2 className="text-xl font-semibold mb-3 text-orange-400 border-b border-gray-700 pb-2 flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-orange-400">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.562-.966.431-1.563A6 6 0 1 1 21.75 8.25Z" />
-            </svg>
-            2. Emissão de Credencial (Com Prova On-Chain)
-          </h2>
-          <p className="text-sm mb-4 text-gray-400">
-            <strong>Instruções:</strong> Use esta seção para emitir novas credenciais para um endereço de usuário. A API usa a chave privada do Emissor configurada no backend para registrar o hash na blockchain (isso consome ETH de teste da Sepolia) e salvar os metadados/blob no banco de dados.
-          </p>
-          <div className="space-y-3">
+        {/* 2. Emissão */}
+        <section className="bg-gray-800 p-6 rounded-lg shadow-md border-l-4 border-orange-600">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-orange-400">2. Emissão de Credencial</h2>
+            <button
+              onClick={() => setShowEmitirHelp(s => !s)}
+              className="text-xs underline text-gray-300 hover:text-white"
+            >
+              {showEmitirHelp ? 'Ocultar instruções' : 'Mostrar instruções'}
+            </button>
+          </div>
+          {showEmitirHelp && (
+            <ol className="mt-3 text-sm text-gray-300 space-y-2">
+              <li><strong>1)</strong> Cole o <em>endereço do destinatário</em>.</li>
+              <li><strong>2)</strong> Informe o <em>JSON da credencial</em> (será usado para o hash canônico).</li>
+              <li><strong>3)</strong> (Recomendado) Defina uma <em>senha</em> — os dados serão <strong>cifrados no navegador</strong> (AES-GCM + PBKDF2) e o servidor recebe apenas o <em>ciphertext</em>.</li>
+              <li><strong>4)</strong> Clique em <em>Emitir</em>. O backend registra o <em>hash</em> na blockchain (Sepolia) e salva o ciphertext + metadados.</li>
+              <li className="text-yellow-300"><strong>Dica:</strong> sem senha, o JSON vai em claro para o backend (modo LEGADO, apenas para PoC).</li>
+            </ol>
+          )}
+
+          <div className="mt-4 space-y-3">
             <div>
-              <label htmlFor="emitUsuario" className="block text-xs font-medium mb-1">Endereço do Usuário (Para quem emitir):</label>
+              <label htmlFor="emitAddr" className="block text-xs mb-1">Endereço do Usuário (destinatário)</label>
               <input
-                id="emitUsuario"
-                type="text"
-                value={emitirUsuarioAddr}
+                id="emitAddr" type="text" value={emitirUsuarioAddr}
                 onChange={(e) => setEmitirUsuarioAddr(e.target.value)}
-                placeholder="Cole o endereço do destinatário (ex: 0x...)"
+                placeholder="0x..."
                 className="w-full text-sm bg-gray-700 border border-gray-600 rounded p-2 focus:ring-orange-500 focus:border-orange-500"
               />
             </div>
             <div>
-              <label htmlFor="emitDados" className="block text-xs font-medium mb-1">Dados da Credencial (JSON String - O que será provado):</label>
+              <label htmlFor="emitJson" className="block text-xs mb-1">Dados da Credencial (JSON)</label>
               <input
-                id="emitDados"
-                type="text"
-                value={emitirDadosJson}
+                id="emitJson" type="text" value={emitirDadosJson}
                 onChange={(e) => setEmitirDadosJson(e.target.value)}
-                placeholder='{"status":"ATIVO", "curso":"PGCOMP"}'
+                placeholder='{"status":"ATIVO","curso":"PGCOMP"}'
                 className="w-full text-sm bg-gray-700 border border-gray-600 rounded p-2 focus:ring-orange-500 focus:border-orange-500"
               />
+              <HashPreview jsonStr={emitirDadosJson} label="Emissão" />
             </div>
             <div>
-              <label htmlFor="emitNome" className="block text-xs font-medium mb-1">Nome Amigável (Opcional - para UI):</label>
+              <label htmlFor="emitSenha" className="block text-xs mb-1">Senha (opcional, recomendado)</label>
               <input
-                id="emitNome"
-                type="text"
-                value={emitirNomeAmigavel}
-                onChange={(e) => setEmitirNomeAmigavel(e.target.value)}
-                placeholder="Ex: Atestado de Matrícula"
+                id="emitSenha" type="password" value={emitirSenha}
+                onChange={(e) => setEmitirSenha(e.target.value)}
+                placeholder="Defina uma senha para cifrar os dados no cliente"
                 className="w-full text-sm bg-gray-700 border border-gray-600 rounded p-2 focus:ring-orange-500 focus:border-orange-500"
               />
+              <p className="text-[11px] text-gray-400 mt-1">Com senha: armazenamos apenas o ciphertext. Sem senha: PoC/legado.</p>
             </div>
-            <div>
-              <label htmlFor="emitDesc" className="block text-xs font-medium mb-1">Descrição (Opcional - para UI):</label>
-              <input
-                id="emitDesc"
-                type="text"
-                value={emitirDescricao}
-                onChange={(e) => setEmitirDescricao(e.target.value)}
-                placeholder="Ex: Válido para o semestre 2026.1"
-                className="w-full text-sm bg-gray-700 border border-gray-600 rounded p-2 focus:ring-orange-500 focus:border-orange-500"
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs mb-1">Nome Amigável (UI)</label>
+                <input
+                  type="text" value={emitirNomeAmigavel}
+                  onChange={(e) => setEmitirNomeAmigavel(e.target.value)}
+                  placeholder="Ex: Atestado de Matrícula"
+                  className="w-full text-sm bg-gray-700 border border-gray-600 rounded p-2 focus:ring-orange-500 focus:border-orange-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs mb-1">Descrição (UI)</label>
+                <input
+                  type="text" value={emitirDescricao}
+                  onChange={(e) => setEmitirDescricao(e.target.value)}
+                  placeholder="Ex: Válido para o semestre 2026.1"
+                  className="w-full text-sm bg-gray-700 border border-gray-600 rounded p-2 focus:ring-orange-500 focus:border-orange-500"
+                />
+              </div>
             </div>
             <button
-              onClick={handleEmitirCredencial}
+              onClick={handleEmitir}
               disabled={isLoadingEmitir}
-              className={`w-full py-2 px-4 rounded font-semibold transition-colors text-sm flex items-center justify-center gap-2 ${isLoadingEmitir ? 'bg-gray-600 cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-700'}`}
+              className={`w-full py-2 px-4 rounded font-semibold transition-colors text-sm ${isLoadingEmitir ? 'bg-gray-600' : 'bg-orange-600 hover:bg-orange-700'}`}
             >
-              {isLoadingEmitir && <SpinnerIcon />}
               {isLoadingEmitir ? 'Emitindo (Blockchain + DB)...' : 'Emitir Nova Credencial'}
             </button>
           </div>
         </section>
 
-        {/* 3. Revogação — AGORA À ESQUERDA */}
-        <section className="bg-gray-800 p-6 rounded-lg shadow-md border-l-4 border-red-600 lg:col-start-1">
-          <h2 className="text-xl font-semibold mb-3 text-red-400 border-b border-gray-700 pb-2 flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-red-400">
-              <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-            </svg>
-            3. Revogar Minha Credencial (On-Chain)
-          </h2>
-          <p className="text-sm mb-4 text-gray-400">
-            <strong>Instruções:</strong> Conecte a carteira MetaMask que possui a credencial. Insira a string JSON <i>exata</i> da credencial que você deseja revogar (invalidar) no "Cartório Digital". Esta ação chamará o Smart Contract diretamente e exigirá uma assinatura e o pagamento de gás (taxa) na rede Sepolia.
-          </p>
-          <div className="space-y-3">
+        {/* 3. Revogação */}
+        <section className="bg-gray-800 p-6 rounded-lg shadow-md border-l-4 border-red-600">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-red-400">3. Revogar Minha Credencial</h2>
+            <button
+              onClick={() => setShowRevogarHelp(s => !s)}
+              className="text-xs underline text-gray-300 hover:text-white"
+            >
+              {showRevogarHelp ? 'Ocultar instruções' : 'Mostrar instruções'}
+            </button>
+          </div>
+          {showRevogarHelp && (
+            <ol className="mt-3 text-sm text-gray-300 space-y-2">
+              <li><strong>1)</strong> <em>Conecte</em> a carteira que recebeu a credencial.</li>
+              <li><strong>2)</strong> Cole a <em>string JSON exata</em> da credencial.</li>
+              <li><strong>3)</strong> Clique em <em>Revogar</em>. Uma transação será enviada — é preciso pagar gás (Sepolia).</li>
+              <li><strong>4)</strong> Após 1 bloco, você verá o link da transação no Etherscan.</li>
+            </ol>
+          )}
+
+          <div className="mt-4 space-y-3">
             <div>
-              <label htmlFor="revokeDados" className="block text-xs font-medium mb-1">Dados Exatos da Credencial a Revogar (JSON String):</label>
+              <label htmlFor="revJson" className="block text-xs mb-1">Dados da Credencial (JSON — exato)</label>
               <input
-                id="revokeDados"
-                type="text"
-                value={revogarDadosJson}
+                id="revJson" type="text" value={revogarDadosJson}
                 onChange={(e) => setRevogarDadosJson(e.target.value)}
-                placeholder="Cole o JSON da credencial a revogar"
+                placeholder='{"status":"ATIVO","curso":"PGCOMP"}'
                 className="w-full text-sm bg-gray-700 border border-gray-600 rounded p-2 focus:ring-red-500 focus:border-red-500"
                 disabled={!userAddress}
               />
+              <HashPreview jsonStr={revogarDadosJson} label="Revogação" />
             </div>
             <button
-              onClick={handleRevogarCredencial}
+              onClick={handleRevogar}
               disabled={isLoadingRevoke || !userAddress}
-              className={`w-full py-2 px-4 rounded font-semibold transition-colors text-sm flex items-center justify-center gap-2 ${isLoadingRevoke || !userAddress ? 'bg-gray-600 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'}`}
-              title={!userAddress ? 'Conecte sua carteira MetaMask primeiro' : 'Revogar credencial na blockchain'}
+              className={`w-full py-2 px-4 rounded font-semibold transition-colors text-sm ${isLoadingRevoke || !userAddress ? 'bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}
+              title={!userAddress ? 'Conecte sua carteira primeiro' : 'Enviar transação de revogação'}
             >
-              {isLoadingRevoke && <SpinnerIcon />}
               {isLoadingRevoke ? 'Revogando On-Chain...' : 'Revogar Credencial'}
             </button>
-            {!userAddress && <p className="text-xs text-yellow-400 text-center mt-2">Conecte sua carteira para habilitar a revogação.</p>}
+            {!userAddress && <p className="text-xs text-yellow-300 text-center">Conecte sua carteira para habilitar a revogação.</p>}
           </div>
         </section>
 
-        {/* 4. Backup — AO LADO DIREITO DO 3 */}
-        <section className="bg-gray-800 p-6 rounded-lg shadow-md border-l-4 border-purple-600 lg:col-start-2">
-          <h2 className="text-xl font-semibold mb-3 text-purple-400 border-b border-gray-700 pb-2 flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-purple-400">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-            </svg>
-            4. Backup Seguro (Exportação de Dados)
-          </h2>
-          <p className="text-sm mb-4 text-gray-400">
-            <strong>Instruções:</strong> Conecte sua carteira. Clique no botão abaixo para gerar um arquivo JSON contendo <strong>todos os seus dados de credenciais armazenados nesta plataforma (de forma criptografada)</strong>. Guarde este arquivo em local seguro. Ele permite restaurar sua identidade em outra plataforma compatível, garantindo sua portabilidade e soberania.
-          </p>
+        {/* 4. Backup */}
+        <section className="bg-gray-800 p-6 rounded-lg shadow-md border-l-4 border-purple-600">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-purple-400">4. Backup Seguro (Exportação)</h2>
+            <button
+              onClick={() => setShowExportarHelp(s => !s)}
+              className="text-xs underline text-gray-300 hover:text-white"
+            >
+              {showExportarHelp ? 'Ocultar instruções' : 'Mostrar instruções'}
+            </button>
+          </div>
+          {showExportarHelp && (
+            <ol className="mt-3 text-sm text-gray-300 space-y-2">
+              <li><strong>1)</strong> <em>Conecte</em> a carteira do titular.</li>
+              <li><strong>2)</strong> Clique em <em>Exportar</em>. Baixaremos um arquivo com todos os seus <strong>ciphertexts</strong> e metadados.</li>
+              <li><strong>3)</strong> Guarde esse arquivo em local seguro. Ele só é útil junto da <strong>senha</strong> usada na emissão.</li>
+              <li className="text-yellow-300"><strong>Dica:</strong> futuramente, a mesma UI terá “Importar backup”.</li>
+            </ol>
+          )}
+
           <button
-            onClick={handleExportarDados}
+            onClick={handleExportar}
             disabled={isLoadingExport || !userAddress}
-            className={`w-full py-2 px-4 rounded font-semibold transition-colors text-sm flex items-center justify-center gap-2 ${isLoadingExport || !userAddress ? 'bg-gray-600 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'}`}
-            title={!userAddress ? 'Conecte sua carteira MetaMask primeiro' : 'Exportar seus dados criptografados'}
+            className={`w-full mt-4 py-2 px-4 rounded font-semibold transition-colors text-sm ${isLoadingExport || !userAddress ? 'bg-gray-600' : 'bg-purple-600 hover:bg-purple-700'}`}
           >
-            {isLoadingExport && <SpinnerIcon />}
             {isLoadingExport ? 'Gerando Backup...' : 'Exportar Minha Carteira de Dados'}
           </button>
-          {!userAddress && <p className="text-xs text-yellow-400 text-center mt-2">Conecte sua carteira para habilitar a exportação.</p>}
+          {!userAddress && <p className="text-xs text-yellow-300 text-center mt-2">Conecte sua carteira para habilitar a exportação.</p>}
         </section>
 
-        {/* Logs — expandido e centralizado (ocupa 2 colunas) */}
+        {/* Logs */}
         <section className="bg-gray-800 p-6 rounded-lg shadow-md lg:col-span-2">
-          <h2 className="text-xl font-semibold mb-3 text-gray-400 border-b border-gray-700 pb-2">Logs de Atividade</h2>
+          <h2 className="text-xl font-semibold mb-3 text-gray-300 border-b border-gray-700 pb-2">Logs de Atividade</h2>
           <div
             ref={logContainerRef}
             className="bg-gray-900 p-3 rounded overflow-y-auto h-96 text-xs font-mono border border-gray-700 leading-relaxed whitespace-pre-wrap"
           >
-            {logs.length > 0 ? logs.map((log, index) => (
-              <p key={index} className={`mb-1 ${getLogColor(log.level)}`}>
+            {logs.length > 0 ? logs.map((log, i) => (
+              <p key={i} className={`mb-1 ${getLogColor(log.level)}`}>
                 <span className="mr-1">{getLogEmoji(log.level)}</span>
                 <span className="text-gray-500 mr-2">{log.timestamp}</span>
                 <span
@@ -624,9 +634,7 @@ const LabDIDPage: React.FC = () => {
                   }}
                 />
               </p>
-            )) : (
-              <p className="text-gray-500">Nenhuma atividade registrada ainda... Conecte sua carteira e use os botões acima.</p>
-            )}
+            )) : <p className="text-gray-500">Dica: emita uma credencial (Seção 2) e verifique (Seção 1) para ver os logs aqui.</p>}
           </div>
         </section>
       </div>
@@ -634,12 +642,4 @@ const LabDIDPage: React.FC = () => {
   );
 };
 
-// Spinner
-const SpinnerIcon = () => (
-  <svg className="animate-spin -ml-1 mr-1 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-  </svg>
-);
-
-export default LabDIDPage;
+export default Page;

@@ -1,53 +1,106 @@
-// pages/api/verificar.js
+// app/api/verificar/route.js
+import { NextResponse } from 'next/server';
+import canonicalize from 'canonicalize';
 import { ethers } from 'ethers';
 import abi from '@/lib/IdentidadeDID_ABI.json';
 
-function log(message) { console.log(`[API Verificar] ${new Date().toISOString()}: ${message}`); }
+// ---------- helpers ----------
+function log(m) {
+  console.log(`[API Verificar] ${new Date().toISOString()}: ${m}`);
+}
+function requireEnv(name) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Variável de ambiente ausente: ${name}`);
+  return v;
+}
+// hash canônico (estável à ordem de chaves/espaçamento)
+function hashFromJsonString(jsonStr) {
+  const obj = JSON.parse(jsonStr);                 // valida JSON
+  const canon = canonicalize(obj);                 // RFC 8785
+  return ethers.utils.keccak256(ethers.utils.toUtf8Bytes(canon));
+}
+function isValidHash(hex) {
+  return typeof hex === 'string' && /^0x[0-9a-fA-F]{64}$/.test(hex);
+}
+async function getContratoLeitura() {
+  const RPC = requireEnv('NEXT_PUBLIC_SEPOLIA_RPC_URL');
+  const END = requireEnv('NEXT_PUBLIC_CONTRATO_ENDERECO');
+  const provider = new ethers.providers.JsonRpcProvider(RPC);
+  const contrato = new ethers.Contract(END, abi, provider);
+  return { contrato };
+}
 
-export default async function handler(req, res) {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ message: 'Método não permitido (apenas POST)' });
+// ---------- handler ----------
+export async function POST(req) {
+  try {
+    // content-type
+    const ct = req.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      return NextResponse.json({ message: 'Content-Type deve ser application/json' }, { status: 415 });
     }
 
-    try {
-        log("Recebida requisicao para verificar credencial.");
-        const { usuarioAddress, dadosCredencialJsonString } = req.body;
+    const body = await req.json();
+    const {
+      usuarioAddress,
+      dadosCredencialJsonString, // modo LEGADO (servidor calcula o hash)
+      hashVerificacao: hashCliente // modo PRIVADO (cliente envia o hash)
+    } = body || {};
 
-        // --- Validações ---
-        if (!usuarioAddress || !ethers.utils.isAddress(usuarioAddress)) {
-            return res.status(400).json({ message: 'Endereco do usuario invalido.' });
-        }
-         if (!dadosCredencialJsonString || typeof dadosCredencialJsonString !== 'string') {
-            return res.status(400).json({ message: 'Dados da credencial (JSON string) sao obrigatorios.' });
-        }
-
-        log(`Dados recebidos: Usuario=${usuarioAddress}, Credencial=${dadosCredencialJsonString}`);
-
-        // --- Conexão Blockchain (Apenas Leitura - Provider) ---
-        const provider = new ethers.providers.JsonRpcProvider(process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL);
-        const contrato = new ethers.Contract(process.env.NEXT_PUBLIC_CONTRATO_ENDERECO, abi, provider);
-        log(`Conectado ao contrato: ${contrato.address}`);
-
-        // --- Geração do Hash ---
-        const hashVerificacao = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(dadosCredencialJsonString));
-        log(`Hash Keccak256 gerado: ${hashVerificacao}`);
-
-        // --- LEITURA DA BLOCKCHAIN (view - não custa gás) ---
-        log("Verificando credencial on-chain...");
-        const resultado = await contrato.verificarCredencial(usuarioAddress, hashVerificacao);
-        log(`Resultado da verificacao on-chain: ${resultado}`);
-
-        // --- Resposta ---
-        res.status(200).json({
-            verificado: resultado, // Retorna true ou false
-            usuario: usuarioAddress,
-            hashVerificacao: hashVerificacao
-        });
-
-    } catch (error) {
-        log(`ERRO: ${error.message}`);
-        console.error(error);
-        res.status(500).json({ message: 'Erro interno no servidor ao verificar credencial.', details: error.message });
+    // validações base
+    if (!usuarioAddress || !ethers.utils.isAddress(usuarioAddress)) {
+      return NextResponse.json({ message: 'Endereco do usuario invalido.' }, { status: 400 });
     }
-    // Não precisa de $disconnect aqui pois usamos apenas o provider
+    if (!dadosCredencialJsonString && !hashCliente) {
+      return NextResponse.json(
+        { message: 'Forneça dadosCredencialJsonString (legado) OU hashVerificacao (privado).' },
+        { status: 400 }
+      );
+    }
+
+    // determina o hash a consultar
+    let hashVerificacao;
+    let source = null;
+
+    if (typeof dadosCredencialJsonString === 'string') {
+      try {
+        hashVerificacao = hashFromJsonString(dadosCredencialJsonString);
+        source = 'json';
+      } catch {
+        return NextResponse.json({ message: 'dadosCredencialJsonString não é um JSON válido.' }, { status: 400 });
+      }
+      // se o cliente também mandou um hash, opcionalmente checamos coerência
+      if (hashCliente && isValidHash(hashCliente) && hashCliente.toLowerCase() !== hashVerificacao.toLowerCase()) {
+        return NextResponse.json(
+          { message: 'Hash informado não confere com o JSON fornecido.' },
+          { status: 400 }
+        );
+      }
+    } else {
+      // modo PRIVADO (sem JSON)
+      if (!isValidHash(hashCliente)) {
+        return NextResponse.json({ message: 'hashVerificacao inválido (esperado 0x + 64 hex).' }, { status: 400 });
+      }
+      hashVerificacao = hashCliente;
+      source = 'hash';
+    }
+
+    log(`Usuario=${usuarioAddress}, Hash=${hashVerificacao}, Source=${source}`);
+
+    // blockchain (somente leitura)
+    const { contrato } = await getContratoLeitura();
+    const verificado = await contrato.verificarCredencial(usuarioAddress, hashVerificacao);
+    log(`Resultado on-chain: ${verificado}`);
+
+    return NextResponse.json(
+      { verificado, usuario: usuarioAddress, hashVerificacao, source },
+      { status: 200, headers: { 'Cache-Control': 'no-store' } }
+    );
+  } catch (error) {
+    log(`ERRO: ${error.message}`);
+    let msg = 'Erro interno no servidor ao verificar credencial.';
+    if (error.code === 'CALL_EXCEPTION' || error.reason) {
+      msg = `Erro no contrato: ${error.reason || error.code}`;
+    }
+    return NextResponse.json({ message: msg, details: error.message }, { status: 500 });
+  }
 }

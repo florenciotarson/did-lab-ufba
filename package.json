@@ -10,7 +10,12 @@
   },
   "dependencies": {
     "@prisma/client": "^6.18.0",
+    "canonicalize": "^2.1.0",
+    "did-jwt-vc": "^4.0.16",
+    "did-resolver": "^4.1.0",
     "ethers": "^6.15.0",
+    "ethr-did": "^3.0.38",
+    "ethr-did-resolver": "^11.0.5",
     "next": "16.0.0",
     "prisma": "^6.18.0",
     "react": "19.2.0",
