@@ -16,6 +16,7 @@ Foco: **Soberania do usuário**, **Privacidade (Zero-Knowledge)**, **Tolerância
 
 ## O que há de novo
 
+
 *  **Criptografia real no cliente** (AES-GCM + PBKDF2 via WebCrypto) — o backend nunca vê o JSON em claro.
 *  **Verificação “privada”**: o verificador envia só o `hashVerificacao` (não precisa enviar o JSON).
 *  **Compatibilidade legado** preservada (ainda aceita enviar o JSON).
@@ -26,20 +27,31 @@ Foco: **Soberania do usuário**, **Privacidade (Zero-Knowledge)**, **Tolerância
 
 ## Sumário
 
-* [Motivação](#motivação)
-* [Arquitetura Híbrida](#arquitetura-híbrida)
-* [Funcionalidades](#funcionalidades)
-* [Stack Tecnológica](#stack-tecnológica)
-* [Como Rodar Localmente](#como-rodar-localmente)
-* [Variáveis de Ambiente](#variáveis-de-ambiente)
-* [Banco de Dados & Prisma](#banco-de-dados--prisma)
-* [APIs (Backend Serverless)](#apis-backend-serverless)
-* [Padrões W3C — VC-JWT](#padrões-w3c--vc-jwt)
-* [Contrato Inteligente](#contrato-inteligente)
-* [Roteiro de Demonstração (8–10 min)](#roteiro-de-demonstração-8–10-min)
-* [Privacidade & Segurança](#privacidade--segurança)
-* [Roadmap](#roadmap)
-* [Licença & Autor](#licença--autor)
+- [O que há de novo](#o-que-há-de-novo)
+- [Sumário](#sumário)
+- [Motivação](#motivação)
+- [Arquitetura Híbrida](#arquitetura-híbrida)
+- [Funcionalidades](#funcionalidades)
+- [Stack Tecnológica](#stack-tecnológica)
+- [Como Rodar Localmente](#como-rodar-localmente)
+  - [1) Pré-requisitos](#1-pré-requisitos)
+  - [2) Clonar \& instalar](#2-clonar--instalar)
+  - [3) Implantar o contrato (Remix + MetaMask · Sepolia)](#3-implantar-o-contrato-remix--metamask--sepolia)
+  - [4) Variáveis de Ambiente](#4-variáveis-de-ambiente)
+  - [5) Banco (Prisma)](#5-banco-prisma)
+  - [6) Executar](#6-executar)
+- [Variáveis de Ambiente](#variáveis-de-ambiente)
+- [Banco de Dados \& Prisma](#banco-de-dados--prisma)
+- [APIs (Backend Serverless)](#apis-backend-serverless)
+  - [POST `/api/emitir`](#post-apiemitir)
+  - [POST `/api/verificar`](#post-apiverificar)
+  - [GET `/api/exportar?userAddress=0xSEU_ENDERECO`](#get-apiexportaruseraddress0xseu_endereco)
+- [Padrões W3C — VC-JWT](#padrões-w3c--vc-jwt)
+- [Contrato Inteligente](#contrato-inteligente)
+- [Roteiro de Demonstração (8–10 min)](#roteiro-de-demonstração-810-min)
+- [Privacidade \& Segurança](#privacidade--segurança)
+- [Roadmap](#roadmap)
+- [Licença \& Autor](#licença--autor)
 
 ---
 
