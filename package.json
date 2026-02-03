@@ -9,27 +9,27 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@prisma/client": "^6.18.0",
+    "@prisma/client": "^6.19.2",
     "canonicalize": "^2.1.0",
     "did-jwt-vc": "^4.0.16",
     "did-resolver": "^4.1.0",
-    "ethers": "^6.15.0",
+    "ethers": "^6.16.0",
     "ethr-did": "^3.0.38",
     "ethr-did-resolver": "^11.0.5",
     "next": "^16.1.6",
-    "prisma": "^6.18.0",
-    "react": "^19.2.1",
-    "react-dom": "^19.2.1"
+    "prisma": "^6.19.2",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/node": "^20.19.31",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
     "@vercel/postgres": "^0.10.0",
     "dotenv-cli": "^10.0.0",
-    "eslint": "^9",
-    "eslint-config-next": "16.0.0",
+    "eslint": "^9.39.2",
+    "eslint-config-next": "^16.1.6",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
